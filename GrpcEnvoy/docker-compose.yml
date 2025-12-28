@@ -1,0 +1,60 @@
+# gRPC Load Balancing with Envoy PoC
+#
+# Usage:
+#   Build and start with multiple server instances:
+#     docker compose up --build --scale grpc-server=3
+#
+#   Or run client separately after servers are up:
+#     docker compose up -d --build --scale grpc-server=3 envoy grpc-server
+#     docker compose run grpc-client
+#
+#   View Envoy admin dashboard: http://localhost:9901
+#   External gRPC access (from host): http://localhost:5000
+
+services:
+  # gRPC Server - scale to multiple instances with --scale grpc-server=N
+  grpc-server:
+    build:
+      context: .
+      dockerfile: GrpcServer/Dockerfile
+    environment:
+      - ASPNETCORE_URLS=http://+:8080
+      - ASPNETCORE_ENVIRONMENT=Development
+    expose:
+      - "8080"
+    networks:
+      - grpc-network
+
+  # Envoy Proxy - provides service discovery and load balancing
+  # Uses STRICT_DNS to discover all grpc-server instances via Docker DNS
+  envoy:
+    image: envoyproxy/envoy:v1.28-latest
+    volumes:
+      - ./envoy.yaml:/etc/envoy/envoy.yaml:ro
+    ports:
+      - "5000:8080"   # gRPC proxy port (external:internal)
+      - "9901:9901"   # Envoy admin interface
+    depends_on:
+      - grpc-server
+    networks:
+      - grpc-network
+    command: ["envoy", "-c", "/etc/envoy/envoy.yaml", "--log-level", "info"]
+
+  # gRPC Client - connects through Envoy (not directly to servers)
+  grpc-client:
+    build:
+      context: .
+      dockerfile: GrpcClient/Dockerfile
+    environment:
+      - GRPC_SERVER_ADDRESS=http://envoy:8080
+      - DOCKER_CONTAINER=true
+    depends_on:
+      - envoy
+      - grpc-server
+    networks:
+      - grpc-network
+
+networks:
+  grpc-network:
+    driver: bridge
+
