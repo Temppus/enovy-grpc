@@ -17,7 +17,7 @@ namespace GrpcServer.Services
         {
             _logger.LogInformation("Received request from {Name} on server {Hostname}", request.Name, _hostname);
 
-            var delay = Random.Shared.Next(500, 1000);
+            var delay = Random.Shared.Next(50, 200);
             await Task.Delay(delay);
 
             _logger.LogInformation("Request processed in {ProcessingTimeMs}", delay);

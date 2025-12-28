@@ -58,7 +58,7 @@ External Access Points:
 
 ```bash
 cd GrpcEnvoy
-docker compose up --build --scale grpc-server=3
+docker compose up --build --scale grpc-server=3 --scale grpc-client=1
 ```
 
 This will:
