@@ -5,7 +5,6 @@ public sealed class GrpcClientOptions
     public const string SectionName = "GrpcClient";
 
     public string Address { get; set; } = "http://localhost:8080";
-    public int TimeoutSeconds { get; set; } = 30;
     public ConnectionOptions Connection { get; set; } = new();
 }
 
