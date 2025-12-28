@@ -1,26 +1,3 @@
-# gRPC Load Balancing with Envoy - Production Configuration
-#
-# Features:
-#   - gRPC health checks for service discovery
-#   - Envoy retry policies and circuit breakers
-#   - Outlier detection for automatic host ejection
-#   - Proper container health checks
-#
-# Usage:
-#   Build and start with multiple server instances:
-#     docker compose up --build --scale grpc-server=3
-#
-#   Or run client separately after servers are up:
-#     docker compose up -d --build --scale grpc-server=3 envoy grpc-server
-#     docker compose run grpc-client
-#
-#   View Envoy admin dashboard: http://localhost:9901
-#     - /clusters: View cluster health and statistics
-#     - /stats: Detailed metrics
-#     - /config_dump: Current configuration
-#
-#   External gRPC access (from host): http://localhost:5000
-
 services:
   # gRPC Server - scale to multiple instances with --scale grpc-server=N
   grpc-server:
@@ -44,8 +21,6 @@ services:
     ports:
       - "5000:8080"   # gRPC proxy port (external:internal)
       - "9901:9901"   # Envoy admin interface
-    depends_on:
-      - grpc-server
     networks:
       - grpc-network
     command: ["envoy", "-c", "/etc/envoy/envoy.yaml", "--log-level", "info"]
@@ -58,8 +33,6 @@ services:
     environment:
       - GRPC_SERVER_ADDRESS=http://envoy:8080
       - DOCKER_CONTAINER=true
-    depends_on:
-      - envoy
     networks:
       - grpc-network
 
