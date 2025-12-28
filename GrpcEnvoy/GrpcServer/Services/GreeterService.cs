@@ -1,5 +1,4 @@
 using Grpc.Core;
-using GrpcServer;
 
 namespace GrpcServer.Services
 {
@@ -14,14 +13,19 @@ namespace GrpcServer.Services
             _hostname = Environment.GetEnvironmentVariable("HOSTNAME") ?? Environment.MachineName;
         }
 
-        public override Task<HelloReply> SayHello(HelloRequest request, ServerCallContext context)
+        public override async Task<HelloReply> SayHello(HelloRequest request, ServerCallContext context)
         {
             _logger.LogInformation("Received request from {Name} on server {Hostname}", request.Name, _hostname);
-            
-            return Task.FromResult(new HelloReply
+
+            var delay = Random.Shared.Next(500, 1000);
+            await Task.Delay(delay);
+
+            _logger.LogInformation("Request processed in {ProcessingTimeMs}", delay);
+
+            return new HelloReply
             {
                 Message = $"Hello {request.Name} from server [{_hostname}]"
-            });
+            };
         }
     }
 }
