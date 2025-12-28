@@ -1,8 +1,15 @@
+# Production-ready gRPC Load Balancing with Envoy
+# Features: Health checks, retries, circuit breaker, outlier detection, access logging
+
 admin:
   address:
     socket_address:
       address: 0.0.0.0
       port_value: 9901
+  access_log:
+    - name: envoy.access_loggers.stdout
+      typed_config:
+        "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
 
 static_resources:
   listeners:
@@ -18,6 +25,21 @@ static_resources:
                 "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
                 stat_prefix: grpc_proxy
                 codec_type: AUTO
+                
+                # Access logging for debugging and monitoring
+                access_log:
+                  - name: envoy.access_loggers.stdout
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
+                      log_format:
+                        text_format: "[%START_TIME%] \"%REQ(:METHOD)% %REQ(:PATH)% %PROTOCOL%\" %RESPONSE_CODE% %GRPC_STATUS% %RESPONSE_FLAGS% %BYTES_RECEIVED% %BYTES_SENT% %DURATION%ms \"%UPSTREAM_HOST%\"\n"
+                
+                # HTTP/2 settings optimized for gRPC
+                http2_protocol_options:
+                  max_concurrent_streams: 100
+                  initial_stream_window_size: 65536      # 64KB
+                  initial_connection_window_size: 1048576 # 1MB
+                
                 route_config:
                   name: grpc_route
                   virtual_hosts:
@@ -26,10 +48,49 @@ static_resources:
                       routes:
                         - match:
                             prefix: "/"
+                            grpc: {}  # Only match gRPC requests
                           route:
                             cluster: grpc_servers
                             timeout: 30s
+                            
+                            # Envoy-level retry policy - handles transient failures
+                            retry_policy:
+                              retry_on: "cancelled,deadline-exceeded,internal,resource-exhausted,unavailable"
+                              num_retries: 3
+                              per_try_timeout: 10s
+                              retry_back_off:
+                                base_interval: 0.1s
+                                max_interval: 1s
+                              # Only retry if upstream hasn't started processing
+                              retriable_headers:
+                                - name: "x-envoy-retry-grpc-on"
+                                  string_match:
+                                    exact: "unavailable"
+                            
+                            # Hedge requests for latency-sensitive operations (optional)
+                            # Uncomment if you want speculative retries
+                            # hedge_policy:
+                            #   initial_requests: 1
+                            #   additional_request_chance:
+                            #     numerator: 30
+                            #     denominator: HUNDRED
+                
                 http_filters:
+                  # gRPC-Web support (optional, for browser clients)
+                  - name: envoy.filters.http.grpc_web
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.grpc_web.v3.GrpcWeb
+                  
+                  # Health check filter - allows /healthz without hitting upstream
+                  - name: envoy.filters.http.health_check
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.health_check.v3.HealthCheck
+                      pass_through_mode: false
+                      headers:
+                        - name: ":path"
+                          string_match:
+                            exact: "/healthz"
+                  
                   - name: envoy.filters.http.router
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
@@ -40,7 +101,56 @@ static_resources:
       type: STRICT_DNS
       lb_policy: ROUND_ROBIN
       dns_lookup_family: V4_ONLY
-      http2_protocol_options: {}
+      
+      # Required for HTTP/2 (gRPC)
+      typed_extension_protocol_options:
+        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+          "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+          explicit_http_config:
+            http2_protocol_options:
+              max_concurrent_streams: 100
+              initial_stream_window_size: 65536
+              initial_connection_window_size: 1048576
+      
+      # gRPC Health Checking - uses standard gRPC health protocol
+      health_checks:
+        - timeout: 5s
+          interval: 10s
+          unhealthy_threshold: 3
+          healthy_threshold: 2
+          grpc_health_check:
+            service_name: "grpc.health.v1.Health"
+      
+      # Circuit breaker - prevents cascading failures
+      circuit_breakers:
+        thresholds:
+          - priority: DEFAULT
+            max_connections: 1000
+            max_pending_requests: 1000
+            max_requests: 1000
+            max_retries: 3
+            track_remaining: true
+          - priority: HIGH
+            max_connections: 2000
+            max_pending_requests: 2000
+            max_requests: 2000
+            max_retries: 5
+      
+      # Outlier detection - ejects unhealthy hosts from the pool
+      outlier_detection:
+        consecutive_5xx: 5                    # Eject after 5 consecutive errors
+        consecutive_gateway_failure: 5         # Eject after 5 gateway failures
+        interval: 10s                          # Analysis interval
+        base_ejection_time: 30s               # Minimum ejection time
+        max_ejection_percent: 50              # Max % of hosts that can be ejected
+        enforcing_consecutive_5xx: 100        # % of time to enforce 5xx ejection
+        enforcing_success_rate: 100           # % of time to enforce success rate ejection
+        success_rate_minimum_hosts: 3         # Min hosts for success rate calculation
+        success_rate_request_volume: 100      # Min requests for success rate calculation
+        success_rate_stdev_factor: 1900       # Success rate std deviation factor
+        consecutive_local_origin_failure: 5   # Local origin failures before ejection
+        enforcing_local_origin_success_rate: 100
+      
       load_assignment:
         cluster_name: grpc_servers
         endpoints:
@@ -50,4 +160,3 @@ static_resources:
                     socket_address:
                       address: grpc-server
                       port_value: 8080
-
