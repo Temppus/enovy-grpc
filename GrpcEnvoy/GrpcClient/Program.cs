@@ -36,7 +36,6 @@ internal class Program
 
         var logger = host.Services.GetRequiredService<ILogger<Program>>();
         logger.LogInformation("Connecting to gRPC server at: {Address}", grpcClientOptions.Address);
-        logger.LogInformation("Using production-ready gRPC channel with retry policies");
 
         await host.RunAsync();
     }
