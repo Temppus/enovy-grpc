@@ -19,11 +19,6 @@ namespace GrpcServer.Services
         {
             _logger.LogInformation("Received request from {Name} on server {Hostname}", request.Name, _hostname);
 
-            if (Random.Shared.NextInt64(0, 100) < 10)
-            {
-                throw new InvalidOperationException("Simulating GRPC request processing error");
-            }
-
             await Semaphore.WaitAsync(context.CancellationToken);
 
             try
