@@ -19,12 +19,7 @@ public sealed class GreeterClientWorker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("GreeterWorker starting...");
-
-        // Wait for service readiness before starting the main loop
-        await WaitForServiceReadyAsync(stoppingToken);
-
-        _logger.LogInformation("Service ready. Starting request loop with {Interval}ms interval", _requestInterval.TotalMilliseconds);
+        _logger.LogInformation("Starting request loop with {Interval}ms interval", _requestInterval.TotalMilliseconds);
 
         var requestNumber = 0;
 
@@ -37,7 +32,7 @@ public sealed class GreeterClientWorker : BackgroundService
                 var request = new HelloRequest { Name = $"Worker-Request-{requestNumber}" };
 
                 var callOptions = new CallOptions(cancellationToken: stoppingToken)
-                    .WithDeadline(DateTime.UtcNow.AddSeconds(30))
+                    .WithDeadline(DateTime.UtcNow.AddSeconds(5))
                     .WithHeaders(new Metadata
                     {
                         { "x-request-id", Guid.NewGuid().ToString() }
@@ -74,43 +69,6 @@ public sealed class GreeterClientWorker : BackgroundService
         }
 
         _logger.LogInformation("GreeterWorker stopped after {RequestCount} requests", requestNumber);
-    }
-
-    private async Task WaitForServiceReadyAsync(CancellationToken stoppingToken)
-    {
-        const int maxWaitSeconds = 30;
-        var deadline = DateTime.UtcNow.AddSeconds(maxWaitSeconds);
-        var attemptDelay = TimeSpan.FromSeconds(2);
-        var attempt = 0;
-
-        _logger.LogInformation("Checking service readiness (timeout: {MaxWait}s)...", maxWaitSeconds);
-
-        while (DateTime.UtcNow < deadline && !stoppingToken.IsCancellationRequested)
-        {
-            attempt++;
-            try
-            {
-                var options = new CallOptions(cancellationToken: stoppingToken)
-                    .WithDeadline(DateTime.UtcNow.AddSeconds(5));
-
-                await _client.SayHelloAsync(new HelloRequest { Name = "HealthCheck" }, options);
-
-                _logger.LogInformation("Service ready after {Attempt} attempt(s)", attempt);
-                return;
-            }
-            catch (RpcException ex) when (ex.StatusCode is StatusCode.Unavailable or StatusCode.DeadlineExceeded)
-            {
-                _logger.LogDebug("Waiting for service... attempt {Attempt} ({StatusCode})", attempt, ex.StatusCode);
-                await Task.Delay(attemptDelay, stoppingToken);
-            }
-        }
-
-        if (stoppingToken.IsCancellationRequested)
-        {
-            throw new OperationCanceledException("Service readiness check cancelled", stoppingToken);
-        }
-
-        throw new TimeoutException($"Service not ready after {maxWaitSeconds} seconds");
     }
 }
 
