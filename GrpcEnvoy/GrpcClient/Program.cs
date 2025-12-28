@@ -30,7 +30,7 @@ internal class Program
         builder.Services.AddGreeterClient(grpcClientOptions);
 
         // Register the hosted service
-        builder.Services.AddHostedService<GreeterWorker>();
+        builder.Services.AddHostedService<GreeterClientWorker>();
 
         var host = builder.Build();
 

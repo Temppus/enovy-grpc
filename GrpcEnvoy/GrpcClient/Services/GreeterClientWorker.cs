@@ -5,13 +5,13 @@ using Microsoft.Extensions.Logging;
 
 namespace GrpcClient.Services;
 
-public sealed class GreeterWorker : BackgroundService
+public sealed class GreeterClientWorker : BackgroundService
 {
     private readonly Greeter.GreeterClient _client;
-    private readonly ILogger<GreeterWorker> _logger;
+    private readonly ILogger<GreeterClientWorker> _logger;
     private readonly TimeSpan _requestInterval = TimeSpan.FromMilliseconds(1000);
 
-    public GreeterWorker(Greeter.GreeterClient client, ILogger<GreeterWorker> logger)
+    public GreeterClientWorker(Greeter.GreeterClient client, ILogger<GreeterClientWorker> logger)
     {
         _client = client;
         _logger = logger;
