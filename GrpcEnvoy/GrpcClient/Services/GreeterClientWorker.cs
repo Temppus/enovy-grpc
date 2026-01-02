@@ -1,3 +1,4 @@
+using Google.Protobuf;
 using Grpc.Core;
 using GrpcServer;
 using Microsoft.Extensions.Hosting;
@@ -10,6 +11,8 @@ public sealed class GreeterClientWorker : BackgroundService
     private readonly Greeter.GreeterClient _client;
     private readonly ILogger<GreeterClientWorker> _logger;
     private readonly TimeSpan _requestInterval = TimeSpan.FromMilliseconds(1000);
+
+    private static readonly ByteString RequestData = ByteString.CopyFrom(new byte[1024 * 1024]); // 1MB
 
     public GreeterClientWorker(Greeter.GreeterClient client, ILogger<GreeterClientWorker> logger)
     {
@@ -29,7 +32,11 @@ public sealed class GreeterClientWorker : BackgroundService
 
             try
             {
-                var request = new HelloRequest { Name = $"Worker-Request-{requestNumber}" };
+                var request = new HelloRequest
+                {
+                    Name = $"Worker-Request-{requestNumber}",
+                    Data = RequestData
+                };
 
                 var callOptions = new CallOptions(cancellationToken: stoppingToken)
                     .WithDeadline(DateTime.UtcNow.AddSeconds(5))
@@ -40,7 +47,10 @@ public sealed class GreeterClientWorker : BackgroundService
 
                 var reply = await _client.SayHelloAsync(request, callOptions);
 
-                _logger.LogInformation("[{RequestNumber:D4}] Response: {Message}", requestNumber, reply.Message);
+                _logger.LogInformation("[{RequestNumber:D4}] " +
+                                       "ResponseMessage: {Message}, " +
+                                       "Data size: {DataSize} bytes",
+                    requestNumber, reply.Message, reply.Data.Length);
             }
             catch (RpcException ex) when (ex.StatusCode == StatusCode.Cancelled)
             {
@@ -55,15 +65,6 @@ public sealed class GreeterClientWorker : BackgroundService
             catch (OperationCanceledException)
             {
                 _logger.LogInformation("Worker stopping due to cancellation");
-                break;
-            }
-
-            try
-            {
-                await Task.Delay(_requestInterval, stoppingToken);
-            }
-            catch (OperationCanceledException)
-            {
                 break;
             }
         }
